@@ -6,16 +6,24 @@
 
 #define LOCKFILE "/tmp/mylockfile"
 
-int main() {
+void run_client(){
+    printf("Client code...");
+}
+void run_server(){
+
+}
+int main(int argc, char *argv[]) {
     int pid_file = open(LOCKFILE, O_CREAT | O_RDWR, 0666);
     int rc = flock(pid_file, LOCK_EX | LOCK_NB);
 
     if(rc) {
-        if(EWOULDBLOCK == errno)
-            exit(EXIT_FAILURE); // another instance is running, therefore make this a client process
+        if(EWOULDBLOCK == errno){
+            run_client(); // another instance is running, therefore make this a client process
+        }
+        else{
+            run_server();
+        }
     }
-
-    /* Continue your program here. */
 
     // Remove the PID file when your program finishes.
     remove(LOCKFILE);
