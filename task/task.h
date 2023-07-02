@@ -6,9 +6,19 @@
 #define SCR2_TASK_H
 #include <time.h>
 #define MAX_CMD_LEN 256
-#define MAX_ARGS 10
+#define MAX_ARGS 20
 #include <malloc.h>
 #include <string.h>
+
+#define MAX_ARG_LEN 100
+#define MSG_TYPE_CREATE 1
+#define MSG_TYPE_DISPLAY 2
+#define MSG_TYPE_CANCEL 3
+typedef struct {
+    long mtype;  // Message type, must be first
+    int argc;
+    char argv[MAX_ARGS][MAX_ARG_LEN];
+} Msg;
 
 typedef enum {
     RELATIVE,

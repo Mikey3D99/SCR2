@@ -38,6 +38,8 @@ void add_task(PriorityQueue* pq, Task* task) {
     }
 }
 
+
+//helper function used when retrieving a task
 void sift_down(PriorityQueue* pq, int start) {
     int parent_index = start;
     int left_child_index = 2 * parent_index + 1;
@@ -61,6 +63,8 @@ void sift_down(PriorityQueue* pq, int start) {
     }
 }
 
+
+//retrieve the task with the highest priority
 Task* get_next_task(PriorityQueue* pq) {
     if (pq->size == 0) {
         fprintf(stderr, "Error: queue is empty\n");

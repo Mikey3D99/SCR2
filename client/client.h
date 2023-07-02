@@ -6,6 +6,8 @@
 #define SCR2_CLIENT_H
 #include <stdio.h>
 #include <sys/msg.h>
+#include "../task/task.h"
+
 
 int run_client(int argc, char *argv[]);
 int connect_to_message_queue();
