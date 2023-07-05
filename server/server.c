@@ -39,6 +39,8 @@ TaskBuffer* create_task_buffer() {
 void destroy_task_buffer(TaskBuffer* buffer) {
     // Destroy the mutex
     pthread_mutex_destroy(&buffer->mutex);
+    free_priority_queue(&buffer->p_queue);
+
     // Free the buffer itself
     free(buffer);
 }
@@ -260,6 +262,7 @@ int run_server(){
         return -1;
     }
     destroy_task_buffer(buffer);
+
 
     return 0;
 }
