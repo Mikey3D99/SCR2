@@ -13,7 +13,7 @@ typedef struct {
     Task* tasks[MAX_TASKS];  // Array of tasks
     int size;  // Current number of tasks
 } PriorityQueue;
-
+void delete_task(PriorityQueue* pq, int task_id);
 PriorityQueue* create_priority_queue();
 void add_task(PriorityQueue* pq, Task* task);
 void sift_down(PriorityQueue* pq, int start);

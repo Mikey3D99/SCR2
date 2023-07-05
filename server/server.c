@@ -172,13 +172,13 @@ void* message_listener(void* arg) {
 
                     // Cancel the task
                     pthread_mutex_lock(&buffer->mutex);
-                    char* result = cancel_task(&buffer->p_queue, task_id);
+                    delete_task(&buffer->p_queue, task_id);
                     pthread_mutex_unlock(&buffer->mutex);
 
                     // Send response message
                     Msg response;
                     response.mtype = MSG_TYPE_RESPONSE;
-                    strncpy(response.argv[0], result, MAX_ARG_LEN - 1);
+                    strncpy(response.argv[0], "successfully deleted", MAX_ARG_LEN - 1);
                     response.argv[0][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
                     if(msgsnd(msqqid, &response, sizeof(Msg) - sizeof(long), 0) == -1) {
                         perror("Error sending response message");

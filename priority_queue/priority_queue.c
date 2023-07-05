@@ -82,6 +82,40 @@ Task* get_next_task(PriorityQueue* pq) {
 
     return task;
 }
+
+Task * find_task_by_id(PriorityQueue* pq, int task_id){
+    for (int i = 0; i < pq->size; i++) {
+        if(pq->tasks[i]->id == task_id){
+            return pq->tasks[i];
+        }
+    }
+    return NULL;
+}
+
+void delete_task(PriorityQueue* pq, int task_id) {
+
+    // Find the task to delete
+    int i;
+    for(i = 0; i < pq->size; i++) {
+        if(pq->tasks[i]->id == task_id) {
+            break;
+        }
+    }
+
+    // If the task was not found, just return
+    if(i == pq->size) {
+        return;
+    }
+
+    // Swap the task with the last task in the array
+    pq->tasks[i] = pq->tasks[pq->size - 1];
+    pq->size--;
+
+    // Heapify from the current position
+    sift_down(pq, i);
+}
+
+
 char* tasks_to_string(PriorityQueue* pq) {
     // Assume MAX_TASKS is the maximum number of tasks
     // Assume TASK_STRING_SIZE is the maximum size of a task's string representation
