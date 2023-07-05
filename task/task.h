@@ -10,10 +10,12 @@
 #include <malloc.h>
 #include <string.h>
 
-#define MAX_ARG_LEN 100
+#define TASK_STRING_SIZE 200
+#define MAX_ARG_LEN 200
 #define MSG_TYPE_CREATE 1
 #define MSG_TYPE_DISPLAY 2
 #define MSG_TYPE_CANCEL 3
+#define MSG_TYPE_RESPONSE 4
 typedef struct {
     long mtype;  // Message type, must be first
     int argc;
@@ -36,6 +38,7 @@ typedef struct {
 } Task;
 
 Task* create_task(int id, char* cmd, char* args[], time_t exec_time, TaskType type, time_t interval);
+void task_to_string(Task* task, char* output);
 void free_task(Task* task);
 
 #endif //SCR2_TASK_H

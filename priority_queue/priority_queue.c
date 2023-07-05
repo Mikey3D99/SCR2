@@ -82,6 +82,30 @@ Task* get_next_task(PriorityQueue* pq) {
 
     return task;
 }
+char* tasks_to_string(PriorityQueue* pq) {
+    // Assume MAX_TASKS is the maximum number of tasks
+    // Assume TASK_STRING_SIZE is the maximum size of a task's string representation
+    char* result = malloc(MAX_TASKS * TASK_STRING_SIZE * sizeof(char));
+
+    if (result == NULL) {
+        perror("Malloc failed");
+        return NULL;
+    }
+
+    result[0] = '\0'; // Start with an empty string
+
+    for (int i = 0; i < pq->size; i++) {
+        char task_str[TASK_STRING_SIZE];
+        task_to_string(pq->tasks[i], task_str);
+
+        // Concatenate the task string to the result string
+        strcat(result, task_str);
+        strcat(result, "\n"); // Add a newline between tasks
+    }
+
+    return result;
+}
+
 
 void free_priority_queue(PriorityQueue* pq) {
     for (int i = 0; i < pq->size; i++) {

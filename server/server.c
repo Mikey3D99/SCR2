@@ -127,7 +127,6 @@ void* message_listener(void* arg) {
                     }
 
                     // Add the task to the buffer and priority queue
-                    // the task will be placed in the queue based on the exec time
                     pthread_mutex_lock(&buffer->mutex);
                     if (buffer->p_queue.size < MAX_TASKS) {
                         add_task(&buffer->p_queue, task);
@@ -136,11 +135,54 @@ void* message_listener(void* arg) {
                     break;
                 }
                 case MSG_TYPE_DISPLAY: {
-                    // TODO: Handle display request here
+                    // Generate a string with all tasks
+                    pthread_mutex_lock(&buffer->mutex);
+                    char* tasks_str = tasks_to_string(&buffer->p_queue);
+                    if(tasks_str == NULL){
+                        pthread_mutex_unlock(&buffer->mutex);
+                        perror("error with creating a string from tasks");
+                        break;
+                    }
+                    pthread_mutex_unlock(&buffer->mutex);
+
+                    // Prepare a response message
+                    Msg resp;
+                    resp.mtype = MSG_TYPE_RESPONSE;
+                    strncpy(resp.argv[0], tasks_str, MAX_ARG_LEN - 1);
+                    resp.argv[0][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
+                    resp.argc = 1;
+
+                    // Send the response message
+                    if(msgsnd(msqqid, &resp, sizeof(Msg) - sizeof(long), 0) == -1) {
+                        perror("Error sending response message");
+                    }
+
+                    // Free the string with tasks
+                    free(tasks_str);
+
                     break;
                 }
                 case MSG_TYPE_CANCEL: {
-                    // TODO: Handle cancel request here
+                    // Extract task ID from the message
+                    int task_id;
+                    if(sscanf(msg.argv[0], "%d", &task_id) != 1) {
+                        fprintf(stderr, "Error: Invalid task ID format\n");
+                        break;
+                    }
+
+                    // Cancel the task
+                    pthread_mutex_lock(&buffer->mutex);
+                    char* result = cancel_task(&buffer->p_queue, task_id);
+                    pthread_mutex_unlock(&buffer->mutex);
+
+                    // Send response message
+                    Msg response;
+                    response.mtype = MSG_TYPE_RESPONSE;
+                    strncpy(response.argv[0], result, MAX_ARG_LEN - 1);
+                    response.argv[0][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
+                    if(msgsnd(msqqid, &response, sizeof(Msg) - sizeof(long), 0) == -1) {
+                        perror("Error sending response message");
+                    }
                     break;
                 }
                 default: {
@@ -153,6 +195,7 @@ void* message_listener(void* arg) {
 
     return NULL;
 }
+
 
 
 int destroy_message_queue() {

@@ -52,6 +52,9 @@ int run_client(int argc, char *argv[]) {
         return -1;
     }
 
+    Msg msg;
+    msg.argc = argc - 1; // Exclude the "create" command itself from the argument count
+
     if (strcmp(argv[1], "create") == 0) {
         // Create a new task
         if (argc < 6) {
@@ -60,14 +63,12 @@ int run_client(int argc, char *argv[]) {
         }
 
         // Prepare the message
-        Msg msg;
         msg.mtype = MSG_TYPE_CREATE;
-        msg.argc = argc - 1; // Exclude the "create" command itself from the argument count
+
         for (int i = 1; i < argc && i < MAX_ARGS; i++) {
             strncpy(msg.argv[i-1], argv[i], MAX_ARG_LEN - 1);
             msg.argv[i-1][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
         }
-
         // Send the message
         if (msgsnd(msgqid, &msg, sizeof(Msg) - sizeof(long), 0) == -1) {
             perror("Error sending message");
@@ -78,13 +79,46 @@ int run_client(int argc, char *argv[]) {
         // Display all tasks
         // Send a message to request all tasks
         // Wait for and handle the response
-    } else if (strcmp(argv[1], "cancel") == 0) {
-        // Cancel a task
-        if (argc < 3) {
-            fprintf(stderr, "Error: No task ID specified to cancel\n");
+
+        msg.mtype = MSG_TYPE_DISPLAY;
+        if (msgsnd(msgqid, &msg, sizeof(Msg) - sizeof(long), 0) == -1) {
+            perror("Error sending message");
             return -1;
         }
+
+        // Wait for the response from the server
+        Msg resp;
+        if(msgrcv(msgqid, &resp, sizeof(Msg) - sizeof(long), MSG_TYPE_RESPONSE, 0) != -1) {
+            // Print the tasks string
+            printf("%s\n", resp.argv[0]);
+        } else {
+            perror("Error receiving response message");
+            return -1;
+        }
+
+    } else if (strcmp(argv[1], "cancel") == 0) {
         // Send a message to cancel task
+        if(argc != 3) {
+            fprintf(stderr, "Error: Invalid number of arguments for 'cancel'\n");
+            return -1;
+        }
+        msg.mtype = MSG_TYPE_CANCEL;
+        strncpy(msg.argv[0], argv[2], MAX_ARG_LEN - 1); // argv[2] should be the ID to cancel
+
+        if (msgsnd(msgqid, &msg, sizeof(Msg) - sizeof(long), 0) == -1) {
+            perror("Error sending message");
+            return -1;
+        }
+
+        // Wait for the response from the server
+        Msg resp;
+        if(msgrcv(msgqid, &resp, sizeof(Msg) - sizeof(long), MSG_TYPE_RESPONSE, 0) != -1) {
+            // Print the response message
+            printf("%s\n", resp.argv[0]);
+        } else {
+            perror("Error receiving response message");
+            return -1;
+        }
     } else {
         fprintf(stderr, "Error: Invalid operation\n");
         return -1;
