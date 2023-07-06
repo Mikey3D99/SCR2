@@ -96,17 +96,12 @@ int run_client(int argc, char *argv[]) {
             return -1;
         }
 
-    } else if (strcmp(argv[1], "cancel") == 0) {
-        // Send a message to cancel task
-        if(argc != 3) {
-            fprintf(stderr, "Error: Invalid number of arguments for 'cancel'\n");
-            return -1;
-        }
-        msg.mtype = MSG_TYPE_CANCEL;
-        strncpy(msg.argv[0], argv[2], MAX_ARG_LEN - 1); // argv[2] should be the ID to cancel
+    } else if (strcmp(argv[1], "quit") == 0) {
 
+        // Send a message to trigger a server shutdown
+        msg.mtype = MSG_TYPE_QUIT;
         if (msgsnd(msgqid, &msg, sizeof(Msg) - sizeof(long), 0) == -1) {
-            perror("Error sending message");
+            perror("Error sending quit message");
             return -1;
         }
 
@@ -119,7 +114,8 @@ int run_client(int argc, char *argv[]) {
             perror("Error receiving response message");
             return -1;
         }
-    } else {
+    }
+    else {
         fprintf(stderr, "Error: Invalid operation\n");
         return -1;
     }

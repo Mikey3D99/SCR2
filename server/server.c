@@ -12,6 +12,7 @@
 #include <errno.h>
 #include <signal.h>
 #include <unistd.h>
+#include <stdbool.h>
 
 
 #define MSG_QUEUE_KEY 1234
@@ -22,6 +23,7 @@ typedef struct {
     pthread_mutex_t mutex;
     pthread_cond_t cond;
     int msqqid;
+    bool quit_flag;
 } TaskBuffer;
 
 
@@ -46,6 +48,7 @@ TaskBuffer* create_task_buffer() {
 
     // Initialize msqqid (or set it to a default value)
     buffer->msqqid = -1;
+    buffer->quit_flag = false;
     return buffer;
 }
 
@@ -126,9 +129,16 @@ Task *create_task_from_msg(Msg msg) {
 void* message_listener(void* arg) {
     TaskBuffer* buffer = (TaskBuffer*)arg;
 
-    while (1) {
+    while (true) {
         Msg msg;
         int msqqid = 0;
+
+        pthread_mutex_lock(&buffer->mutex);
+        if(buffer->quit_flag){
+            pthread_mutex_unlock(&buffer->mutex);
+            break;
+        }
+        pthread_mutex_unlock(&buffer->mutex);
 
         // Receive any type of message
         if(msgrcv(msqqid, &msg, sizeof(Msg) - sizeof(long), 0, IPC_NOWAIT) != -1) {
@@ -200,6 +210,11 @@ void* message_listener(void* arg) {
                     }
                     break;
                 }
+                case MSG_TYPE_QUIT: {
+                    // Set quit flag to true
+                    buffer->quit_flag = true;
+                    break;
+                }
                 default: {
                     fprintf(stderr, "Received message with unknown type: %ld\n", msg.mtype);
                     break;
@@ -254,8 +269,12 @@ void* task_worker(void* arg) {
     sev.sigev_value.sival_ptr = &buffer->p_queue;
     timer_create(CLOCK_REALTIME, &sev, &timer);
 
-    while (1) {
+    while (true) {
         pthread_mutex_lock(&buffer->mutex);
+        if(buffer->quit_flag){
+            pthread_mutex_unlock(&buffer->mutex);
+            break;
+        }
 
         while (buffer->p_queue.size == 0) {
             pthread_cond_wait(&buffer->cond, &buffer->mutex);
@@ -334,6 +353,15 @@ int run_server(){
         return -1;
     }
 
+    //task worker
+    pthread_t worker_thread;
+    rc = pthread_create(&worker_thread, NULL, task_worker, (void *)buffer);
+    if (rc != 0) {
+        perror("Error creating listener thread");
+        destroy_task_buffer(buffer);
+        return -1;
+    }
+
     // Join the listener thread (wait for it to finish)
     void* result;
     rc = pthread_join(listener_thread, &result);
@@ -341,6 +369,24 @@ int run_server(){
         perror("Error joining listener thread");
         destroy_task_buffer(buffer);
         return -1;
+    }
+
+    // Join the worker thread (wait for it to finish)
+    rc = pthread_join(worker_thread, &result);
+    if (rc != 0) {
+        perror("Error joining listener thread");
+        destroy_task_buffer(buffer);
+        return -1;
+    }
+
+    // Send response message
+    Msg response;
+    response.mtype = MSG_TYPE_RESPONSE;
+    strncpy(response.argv[0], "Server successfully shut down", MAX_ARG_LEN - 1);
+    response.argv[0][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
+
+    if(msgsnd(buffer->msqqid, &response, sizeof(Msg) - sizeof(long), 0) == -1) {
+        perror("Error sending response message");
     }
 
     //clean up

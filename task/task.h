@@ -16,6 +16,7 @@
 #define MSG_TYPE_DISPLAY 2
 #define MSG_TYPE_CANCEL 3
 #define MSG_TYPE_RESPONSE 4
+#define MSG_TYPE_QUIT 5
 typedef struct {
     long mtype;  // Message type, must be first
     int argc;
