@@ -19,6 +19,13 @@ void add_task(PriorityQueue* pq, Task* task) {
         return;
     }
 
+    // If the task type is RELATIVE, adjust exec_time to an absolute timestamp
+    if (task->type == RELATIVE) {
+        time_t current_time;
+        time(&current_time);
+        task->exec_time += current_time;
+    }
+
     // Add the task at the end of the array
     pq->tasks[pq->size] = task;
     pq->size++;

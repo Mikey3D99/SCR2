@@ -10,6 +10,9 @@
 #include <sys/msg.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <signal.h>
+#include <unistd.h>
+
 
 #define MSG_QUEUE_KEY 1234
 #define MAX_TASKS 100
@@ -17,8 +20,10 @@
 typedef struct {
     PriorityQueue p_queue;
     pthread_mutex_t mutex;
+    pthread_cond_t cond;
     int msqqid;
 } TaskBuffer;
+
 
 
 // Function to create an empty task buffer
@@ -31,6 +36,14 @@ TaskBuffer* create_task_buffer() {
         free(buffer);
         return NULL;
     }
+
+    if (pthread_cond_init(&buffer->cond,NULL) != 0) {
+        fprintf(stderr, "Error: could not initialize mutex\n");
+        pthread_mutex_destroy(&buffer->mutex);
+        free(buffer);
+        return NULL;
+    }
+
     // Initialize msqqid (or set it to a default value)
     buffer->msqqid = -1;
     return buffer;
@@ -197,6 +210,81 @@ void* message_listener(void* arg) {
 
     return NULL;
 }
+
+#include <string.h>
+
+void execute_task(union sigval sv) {
+    PriorityQueue* pq = sv.sival_ptr;
+
+    // The task to execute is the first task in the priority queue
+    Task* task = get_next_task(pq);
+
+    // Initialize the command string with the command
+    char cmd[MAX_CMD_LEN + MAX_ARGS * MAX_ARG_LEN] = "";
+    strncat(cmd, task->cmd, MAX_CMD_LEN - 1);
+
+    // Append each argument to the command
+    for (int i = 0; i < MAX_ARGS && task->args[i] != NULL; i++) {
+        strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1); // Add a space before the argument
+        strncat(cmd, task->args[i], sizeof(cmd) - strlen(cmd) - 1); // Add the argument
+    }
+
+    // Execute the command
+    system(cmd);
+
+    // If the task is cyclic, adjust its exec_time and re-insert it into the queue
+    if (task->type == CYCLIC) {
+        task->exec_time += task->interval;
+        add_task(pq, task);
+    } else {
+        // If the task is not cyclic, free its memory
+        free(task);
+    }
+}
+
+
+void* task_worker(void* arg) {
+    TaskBuffer* buffer = (TaskBuffer*)arg;
+
+    // Create a timer
+    timer_t timer;
+    struct sigevent sev = {0};
+    sev.sigev_notify = SIGEV_THREAD;
+    sev.sigev_notify_function = execute_task;
+    sev.sigev_value.sival_ptr = &buffer->p_queue;
+    timer_create(CLOCK_REALTIME, &sev, &timer);
+
+    while (1) {
+        pthread_mutex_lock(&buffer->mutex);
+
+        while (buffer->p_queue.size == 0) {
+            pthread_cond_wait(&buffer->cond, &buffer->mutex);
+        }
+
+        // Get the task with the earliest exec_time
+        Task* task = get_next_task(&buffer->p_queue);
+
+        pthread_mutex_unlock(&buffer->mutex);
+
+        // Set the timer to fire at the task's exec_time
+        struct itimerspec its = {0};
+        its.it_value.tv_sec = task->exec_time;
+        timer_settime(timer, TIMER_ABSTIME, &its, NULL);
+
+        // Wait for the timer to fire
+        pause();
+
+        // The task has been executed by execute_task(), so we can remove it
+        // Free the task
+        free_task(task);
+    }
+
+    // Destroy the timer
+    timer_delete(timer);
+
+    return NULL;
+}
+
 
 
 
