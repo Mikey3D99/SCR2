@@ -9,6 +9,7 @@
 #define MAX_ARGS 20
 #include <malloc.h>
 #include <string.h>
+#include "../SCR1real/"
 
 #define TASK_STRING_SIZE 200
 #define MAX_ARG_LEN 200
