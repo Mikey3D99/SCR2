@@ -28,7 +28,7 @@ void handle_dump_signal(int sig, siginfo_t *info, void *ucontext) {
 
     if (state_dump_callback) {
         char *dump_data = NULL;
-        state_dump_callback(&dump_data);
+        state_dump_callback(dump_data);
         if (dump_data) {
             write(dump_fd, dump_data, strlen(dump_data));
             free(dump_data);
@@ -63,7 +63,8 @@ void setup_signals() {
     sigaction(SIGRTMIN + 1, &log_action, NULL);
 }
 
-void init_logging(const char *log_file, log_level_t log_level, void (*dump_cb)(const char **)) {
+
+void init_logging(const char *log_file, log_level_t log_level, void (*dump_cb)(const char *)) {
     log_fd = open(log_file, O_CREAT | O_WRONLY | O_TRUNC, 0644);
     if (log_fd == -1) {
         perror("Error opening log file");
@@ -95,8 +96,3 @@ void close_logging() {
 }
 
 
-// Example state dump callback function
-void state_dump(const char **dump_data) {
-    // Allocate memory and populate with the application state
-    *dump_data = strdup("Current application state: A simple example");
-}

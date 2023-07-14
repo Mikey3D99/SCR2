@@ -13,6 +13,7 @@
 #include <signal.h>
 #include <unistd.h>
 #include <stdbool.h>
+#include "../logging_system.h"
 
 
 #define MSG_QUEUE_KEY 1234
@@ -25,6 +26,8 @@ typedef struct {
     int msqqid;
     bool quit_flag;
 } TaskBuffer;
+
+char * current_state_dump;
 
 
 
@@ -162,7 +165,15 @@ void* message_listener(void* arg) {
                 case MSG_TYPE_DISPLAY: {
                     // Generate a string with all tasks
                     pthread_mutex_lock(&buffer->mutex);
-                    char* tasks_str = tasks_to_string(&buffer->p_queue);
+                    if(current_state_dump != NULL){
+                        free(current_state_dump);
+                        current_state_dump = NULL;
+                    }
+                    char * state_dump = tasks_to_string(&buffer->p_queue);
+                    log_message(MIN, state_dump);
+                    current_state_dump = state_dump;
+
+                    char * tasks_str = tasks_to_string(&buffer->p_queue);
                     if(tasks_str == NULL){
                         pthread_mutex_unlock(&buffer->mutex);
                         perror("error with creating a string from tasks");
@@ -324,6 +335,11 @@ int destroy_message_queue() {
     return 0;
 }
 
+
+void pqueue_state_callback(const char * dump_data){
+    dump_data = current_state_dump;
+}
+
 int run_server(){
     printf("SERVER CRON REPLICA...\n");
 
@@ -334,6 +350,9 @@ int run_server(){
         perror("error initializing message queue");
         return INIT_MSG_Q_ERR;
     }
+
+    //initiate the state dump
+    current_state_dump = NULL;
 
 
     //create the task buffer in order to launch message listener thread
@@ -361,6 +380,13 @@ int run_server(){
         destroy_task_buffer(buffer);
         return -1;
     }
+
+    //initiate logging
+    log_level_t lvl = MIN;
+    init_logging("log_file", lvl, pqueue_state_callback);
+
+
+    //-----------------------------------------------------------
 
     // Join the listener thread (wait for it to finish)
     void* result;
@@ -396,7 +422,7 @@ int run_server(){
         return -1;
     }
     destroy_task_buffer(buffer);
-
+    close_logging();
 
     return 0;
 }
