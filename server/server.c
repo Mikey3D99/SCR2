@@ -158,11 +158,15 @@ void* message_listener(void* arg) {
                     pthread_mutex_lock(&buffer->mutex);
                     if (buffer->p_queue.size < MAX_TASKS) {
                         add_task(&buffer->p_queue, task);
+                        // Signal the condition variable since a new task has been added
+                        pthread_cond_signal(&buffer->cond);
                     }
                     pthread_mutex_unlock(&buffer->mutex);
                     break;
                 }
                 case MSG_TYPE_DISPLAY: {
+
+
                     // Generate a string with all tasks
                     pthread_mutex_lock(&buffer->mutex);
                     if(current_state_dump != NULL){
@@ -184,7 +188,13 @@ void* message_listener(void* arg) {
                     // Prepare a response message
                     Msg resp;
                     resp.mtype = MSG_TYPE_RESPONSE;
-                    strncpy(resp.argv[0], tasks_str, MAX_ARG_LEN - 1);
+                    if(buffer->p_queue.size > 0){
+                        strncpy(resp.argv[0], tasks_str, MAX_ARG_LEN - 1);
+                    }
+                    else{
+                        strncpy(resp.argv[0], "\nResponse from server: no tasks currently scheduled", MAX_ARG_LEN - 1);
+                    }
+
                     resp.argv[0][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
                     resp.argc = 1;
 
@@ -238,13 +248,21 @@ void* message_listener(void* arg) {
 }
 
 #include <string.h>
+pthread_cond_t timer_cond = PTHREAD_COND_INITIALIZER;
+pthread_mutex_t timer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void execute_task(union sigval sv) {
-    PriorityQueue* pq = sv.sival_ptr;
 
+
+    TaskBuffer * buffer = sv.sival_ptr;
+    pthread_mutex_lock(&buffer->mutex);
+    printf("ENTERED EXECUTE; pq size:[%d][%p]", buffer->p_queue.size, &buffer->p_queue);
+    fflush(stdout);
     // The task to execute is the first task in the priority queue
-    Task* task = get_next_task(pq);
-
+    Task* task = get_next_task(&buffer->p_queue);
+    printf("ENTERED EXECUTE: task id: %d", task->id);
+    fflush(stdout);
+    pthread_mutex_unlock(&buffer->mutex);
     // Initialize the command string with the command
     char cmd[MAX_CMD_LEN + MAX_ARGS * MAX_ARG_LEN] = "";
     strncat(cmd, task->cmd, MAX_CMD_LEN - 1);
@@ -258,65 +276,102 @@ void execute_task(union sigval sv) {
     // Execute the command
     system(cmd);
 
+    printf("KURWA");
+    fflush(stdout);
+
     // If the task is cyclic, adjust its exec_time and re-insert it into the queue
     if (task->type == CYCLIC) {
+        pthread_mutex_lock(&buffer->mutex);
         task->exec_time += task->interval;
-        add_task(pq, task);
-    } else {
-        // If the task is not cyclic, free its memory
-        free(task);
+        add_task(&buffer->p_queue, task);
+        pthread_mutex_unlock(&buffer->mutex);
     }
+    else{
+        delete_task(&buffer->p_queue, task->id);
+    }
+    // Signal the task_worker thread that the task is executed
+    pthread_mutex_lock(&timer_mutex);
+    pthread_cond_signal(&timer_cond);
+    pthread_mutex_unlock(&timer_mutex);
 }
+
 
 
 void* task_worker(void* arg) {
     TaskBuffer* buffer = (TaskBuffer*)arg;
+
 
     // Create a timer
     timer_t timer;
     struct sigevent sev = {0};
     sev.sigev_notify = SIGEV_THREAD;
     sev.sigev_notify_function = execute_task;
-    sev.sigev_value.sival_ptr = &buffer->p_queue;
-    timer_create(CLOCK_REALTIME, &sev, &timer);
+    sev.sigev_value.sival_ptr = buffer;
 
+    if (timer_create(CLOCK_REALTIME, &sev, &timer) == -1) {
+        perror("timer_create");
+        return NULL;
+    }
+
+   // int i = 0;
     while (true) {
+       // i++;
         pthread_mutex_lock(&buffer->mutex);
         if(buffer->quit_flag){
             pthread_mutex_unlock(&buffer->mutex);
             break;
         }
 
+
+      //  int j = 0;
         while (buffer->p_queue.size == 0) {
+          //  j++;
+          //  printf("TASK WORKER ON %d; %d", i, j);
+           // fflush(stdout);
             pthread_cond_wait(&buffer->cond, &buffer->mutex);
         }
 
+        printf("pqsize in task worker 2: [%d], %p", buffer->p_queue.size, &buffer->p_queue);
+        fflush(stdout);
         // Get the task with the earliest exec_time
-        Task* task = get_next_task(&buffer->p_queue);
+        Task* task = peek_next_task(&buffer->p_queue);
+        if (!task) {
+            perror("No task retrieved from the queue.\n");
+            continue;
+        }
 
         pthread_mutex_unlock(&buffer->mutex);
 
-        // Set the timer to fire at the task's exec_time
+        // Set the timer to fire at the absolute exec_time
         struct itimerspec its = {0};
         its.it_value.tv_sec = task->exec_time;
-        timer_settime(timer, TIMER_ABSTIME, &its, NULL);
 
-        // Wait for the timer to fire
-        pause();
+        if (timer_settime(timer, TIMER_ABSTIME, &its, NULL) == -1) {
+            perror("timer_settime");
+            printf("error settime");
+            fflush(stdout);
+            free_task(task);
+            return NULL;
+        }
 
-        // The task has been executed by execute_task(), so we can remove it
-        // Free the task
-        free_task(task);
+
+
+        // Wait for the timer to fire using a condition variable
+        pthread_mutex_lock(&timer_mutex);
+        pthread_cond_wait(&timer_cond, &timer_mutex);
+        pthread_mutex_unlock(&timer_mutex);
+        printf("pqsize in task worker 2: [%d], %p", buffer->p_queue.size, &buffer->p_queue);
+        fflush(stdout);
     }
+
+    pthread_cond_destroy(&timer_cond);
+    pthread_mutex_destroy(&timer_mutex);
 
     // Destroy the timer
     timer_delete(timer);
 
     return NULL;
 }
-
-
-
 
 int destroy_message_queue() {
     // Get the ID of the existing message queue
@@ -346,7 +401,7 @@ int run_server(){
 
     // first initialize priority queue and message queue
     int msqgid = initialize_message_queue();
-    if(!msqgid){
+    if(msqgid == INIT_MSG_Q_ERR){
         perror("error initializing message queue");
         return INIT_MSG_Q_ERR;
     }

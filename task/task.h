@@ -9,7 +9,7 @@
 #define MAX_ARGS 20
 #include <malloc.h>
 #include <string.h>
-#include "../SCR1real/"
+#include <bits/pthreadtypes.h>
 
 #define TASK_STRING_SIZE 200
 #define MAX_ARG_LEN 200
@@ -29,6 +29,9 @@ typedef enum {
     ABSOLUTE,
     CYCLIC
 } TaskType;
+
+extern pthread_cond_t timer_cond;  // Assuming these are defined at global scope or you can move them to a header file
+extern pthread_mutex_t timer_mutex;
 
 typedef struct {
     int id;                 // task identifier

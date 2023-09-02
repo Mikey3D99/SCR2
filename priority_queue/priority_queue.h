@@ -20,5 +20,6 @@ void sift_down(PriorityQueue* pq, int start);
 Task* get_next_task(PriorityQueue* pq);
 void free_priority_queue(PriorityQueue* pq);
 char* tasks_to_string(PriorityQueue* pq);
+Task* peek_next_task(PriorityQueue* pq);
 
 #endif //SCR2_PRIORITY_QUEUE_H

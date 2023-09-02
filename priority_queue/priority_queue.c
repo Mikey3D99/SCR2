@@ -71,7 +71,6 @@ void sift_down(PriorityQueue* pq, int start) {
 }
 
 
-//retrieve the task with the highest priority
 Task* get_next_task(PriorityQueue* pq) {
     if (pq->size == 0) {
         fprintf(stderr, "Error: queue is empty\n");
@@ -89,6 +88,14 @@ Task* get_next_task(PriorityQueue* pq) {
 
     return task;
 }
+
+Task* peek_next_task(PriorityQueue* pq) {
+    if (pq->size == 0) {
+        return NULL;
+    }
+    return pq->tasks[0];
+}
+
 
 Task * find_task_by_id(PriorityQueue* pq, int task_id){
     for (int i = 0; i < pq->size; i++) {
@@ -113,6 +120,9 @@ void delete_task(PriorityQueue* pq, int task_id) {
     if(i == pq->size) {
         return;
     }
+
+    // Free the task memory
+    free(pq->tasks[i]);
 
     // Swap the task with the last task in the array
     pq->tasks[i] = pq->tasks[pq->size - 1];
