@@ -81,6 +81,7 @@ Task* get_next_task(PriorityQueue* pq) {
     pq->tasks[0] = pq->tasks[pq->size - 1];
     pq->size--;
 
+
     // Reheapify the queue
     if (pq->size > 0) {
         sift_down(pq, 0);

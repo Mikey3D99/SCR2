@@ -7,7 +7,7 @@
 #include "server/server.h"
 #include "client/client.h"
 
-#define LOCKFILE "/home/michaubob/CLionProjects/SCR2real/tmp/mylockfile"
+#define LOCKFILE "/home/michaubob/CLionProjects/SCR2kurcze/tmp/mylockfile"
 
 // Function to create a directory if it doesn't exist
 int createDirectory(const char *path) {
@@ -24,7 +24,7 @@ int createDirectory(const char *path) {
 }
 
 int main(int argc, char *argv[]) {
-    if (!createDirectory("/home/michaubob/CLionProjects/SCR2real/tmp")) {
+    if (!createDirectory("/home/michaubob/CLionProjects/SCR2kurcze/tmp")) {
         return 1;
     }
 

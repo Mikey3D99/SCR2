@@ -16,7 +16,7 @@
 #include "../logging_system.h"
 
 
-#define MSG_QUEUE_KEY 1234
+#define MSG_QUEUE_KEY 1232
 #define MAX_TASKS 100
 
 typedef struct {
@@ -58,6 +58,7 @@ TaskBuffer* create_task_buffer() {
 void destroy_task_buffer(TaskBuffer* buffer) {
     // Destroy the mutex
     pthread_mutex_destroy(&buffer->mutex);
+    pthread_cond_destroy(&buffer->cond);
     free_priority_queue(&buffer->p_queue);
 
     // Free the buffer itself
@@ -131,11 +132,13 @@ Task *create_task_from_msg(Msg msg) {
 
 void* message_listener(void* arg) {
     TaskBuffer* buffer = (TaskBuffer*)arg;
+    Msg msg;
+
+    pthread_mutex_lock(&buffer->mutex);
+    int msqqid = buffer->msqqid;
+    pthread_mutex_unlock(&buffer->mutex);
 
     while (true) {
-        Msg msg;
-        int msqqid = 0;
-
         pthread_mutex_lock(&buffer->mutex);
         if(buffer->quit_flag){
             pthread_mutex_unlock(&buffer->mutex);
@@ -233,7 +236,13 @@ void* message_listener(void* arg) {
                 }
                 case MSG_TYPE_QUIT: {
                     // Set quit flag to true
+                    printf("Server quit initialized\n");
+                    fflush(stdout);
+                    pthread_mutex_lock(&buffer->mutex);
                     buffer->quit_flag = true;
+                    pthread_cond_signal(&buffer->cond);
+                    pthread_cond_signal(&timer_cond);
+                    pthread_mutex_unlock(&buffer->mutex);
                     break;
                 }
                 default: {
@@ -253,13 +262,20 @@ pthread_mutex_t timer_mutex = PTHREAD_MUTEX_INITIALIZER;
 
 void execute_task(union sigval sv) {
 
-
     TaskBuffer * buffer = sv.sival_ptr;
     pthread_mutex_lock(&buffer->mutex);
     printf("ENTERED EXECUTE; pq size:[%d][%p]", buffer->p_queue.size, &buffer->p_queue);
     fflush(stdout);
     // The task to execute is the first task in the priority queue
     Task* task = get_next_task(&buffer->p_queue);
+    if (task == NULL) {
+        // Handle error
+        pthread_mutex_unlock(&buffer->mutex);
+        printf("TASK IS NULL");
+        fflush(stdout);
+        return;
+    }
+
     printf("ENTERED EXECUTE: task id: %d", task->id);
     fflush(stdout);
     pthread_mutex_unlock(&buffer->mutex);
@@ -272,22 +288,16 @@ void execute_task(union sigval sv) {
         strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1); // Add a space before the argument
         strncat(cmd, task->args[i], sizeof(cmd) - strlen(cmd) - 1); // Add the argument
     }
-
     // Execute the command
     system(cmd);
-
-    printf("KURWA");
-    fflush(stdout);
-
     // If the task is cyclic, adjust its exec_time and re-insert it into the queue
     if (task->type == CYCLIC) {
         pthread_mutex_lock(&buffer->mutex);
         task->exec_time += task->interval;
         add_task(&buffer->p_queue, task);
         pthread_mutex_unlock(&buffer->mutex);
-    }
-    else{
-        delete_task(&buffer->p_queue, task->id);
+    } else {
+        free_task(task);
     }
     // Signal the task_worker thread that the task is executed
     pthread_mutex_lock(&timer_mutex);
@@ -322,13 +332,12 @@ void* task_worker(void* arg) {
             break;
         }
 
-
-      //  int j = 0;
-        while (buffer->p_queue.size == 0) {
-          //  j++;
-          //  printf("TASK WORKER ON %d; %d", i, j);
-           // fflush(stdout);
+        // Wait if the queue is empty.
+        while (buffer->p_queue.size == 0 && !buffer->quit_flag) {
             pthread_cond_wait(&buffer->cond, &buffer->mutex);
+        }
+        if (buffer->quit_flag) {
+            break;
         }
 
         printf("pqsize in task worker 2: [%d], %p", buffer->p_queue.size, &buffer->p_queue);

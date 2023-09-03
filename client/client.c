@@ -5,7 +5,7 @@
 #include "client.h"
 #include "../task/task.h"
 
-#define MSG_QUEUE_KEY 1234
+#define MSG_QUEUE_KEY 1232
 
 
 int connect_to_message_queue() {
@@ -46,6 +46,9 @@ int run_client(int argc, char *argv[]) {
 
     // Convert the PID to a string
     snprintf(pid_str, sizeof(pid_str), "%d", pid);
+
+    printf("SUCCESSFULLY CONNECTED TO THE SERVER");
+    fflush(stdout);
 
     if (strcmp(argv[1], "create") == 0) {
         // Create a new task
@@ -111,6 +114,36 @@ int run_client(int argc, char *argv[]) {
         Msg resp;
         if(msgrcv(msgqid, &resp, sizeof(Msg) - sizeof(long), MSG_TYPE_RESPONSE, 0) != -1) {
             // Print the response message
+            printf("%s\n", resp.argv[0]);
+        } else {
+            perror("Error receiving response message");
+            return -1;
+        }
+    }
+    else if (strcmp(argv[1], "cancel") == 0) {
+
+        if (argc < 3) {
+            fprintf(stderr, "Error: Not enough arguments to cancel a task\n");
+            return -1;
+        }
+
+        // Prepare the message
+        msg.mtype = MSG_TYPE_CANCEL;
+
+        // Assuming the task_id is a string in argv[2] which will be sent in argv[0] of the message
+        strncpy(msg.argv[0], argv[2], MAX_ARG_LEN - 1);
+        msg.argv[0][MAX_ARG_LEN - 1] = '\0'; // Ensure null termination
+
+        // Send the message
+        if (msgsnd(msgqid, &msg, sizeof(Msg) - sizeof(long), 0) == -1) {
+            perror("Error sending cancel message");
+            return -1;
+        }
+
+        // Wait for the response from the server
+        Msg resp;
+        if(msgrcv(msgqid, &resp, sizeof(Msg) - sizeof(long), MSG_TYPE_RESPONSE, 0) != -1) {
+            // Print the tasks string
             printf("%s\n", resp.argv[0]);
         } else {
             perror("Error receiving response message");
