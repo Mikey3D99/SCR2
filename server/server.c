@@ -62,7 +62,7 @@ void destroy_task_buffer(TaskBuffer* buffer) {
     free_priority_queue(&buffer->p_queue);
 
     // Free the buffer itself
-    free(buffer);
+    //free(buffer);
 }
 
 int initialize_message_queue(){
