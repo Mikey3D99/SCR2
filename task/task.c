@@ -33,6 +33,7 @@ Task* create_task(int id, char* cmd, char* args[], time_t exec_time, TaskType ty
     task->exec_time = exec_time;
     task->type = type;
     task->interval = interval;
+    task->timer_created = false;
     if(type != CYCLIC){
         task->interval = 0;
     }

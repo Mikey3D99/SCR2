@@ -257,8 +257,60 @@ void* message_listener(void* arg) {
 }
 
 #include <string.h>
+#include <spawn.h>
+#include <sys/wait.h>
+
 pthread_cond_t timer_cond = PTHREAD_COND_INITIALIZER;
 pthread_mutex_t timer_mutex = PTHREAD_MUTEX_INITIALIZER;
+timer_t active_timers[MAX_TASKS];
+int timer_count = 0;
+pthread_mutex_t timers_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+void add_timer_to_list(timer_t timer) {
+    pthread_mutex_lock(&timers_mutex);
+    if (timer_count < MAX_TASKS) {
+        active_timers[timer_count++] = timer;
+    }
+    // Handle else case, maybe by dynamically resizing, logging an error, etc.
+    pthread_mutex_unlock(&timers_mutex);
+}
+
+void remove_timer_from_list(timer_t timer) {
+    pthread_mutex_lock(&timers_mutex);
+
+    int index_to_remove = -1;
+    for (int i = 0; i < timer_count; i++) {
+        if (active_timers[i] == timer) {
+            index_to_remove = i;
+            break;
+        }
+    }
+
+    // If the timer was found in the list
+    if (index_to_remove != -1) {
+        // Shift timers in the array to the left to fill the gap
+        for (int i = index_to_remove; i < timer_count - 1; i++) {
+            active_timers[i] = active_timers[i + 1];
+        }
+
+        // Decrease the timer count
+        timer_count--;
+    }
+    // Else, maybe handle the case where the timer is not found, log an error, etc.
+
+    pthread_mutex_unlock(&timers_mutex);
+}
+
+
+void delete_all_timers() {
+    pthread_mutex_lock(&timers_mutex);
+    for (int i = 0; i < timer_count; i++) {
+        timer_delete(active_timers[i]);
+    }
+    timer_count = 0;  // Reset the timer count
+    pthread_mutex_unlock(&timers_mutex);
+}
+
 
 void execute_task(union sigval sv) {
 
@@ -279,17 +331,16 @@ void execute_task(union sigval sv) {
     printf("ENTERED EXECUTE: task id: %d", task->id);
     fflush(stdout);
     pthread_mutex_unlock(&buffer->mutex);
-    // Initialize the command string with the command
-    char cmd[MAX_CMD_LEN + MAX_ARGS * MAX_ARG_LEN] = "";
-    strncat(cmd, task->cmd, MAX_CMD_LEN - 1);
 
-    // Append each argument to the command
-    for (int i = 0; i < MAX_ARGS && task->args[i] != NULL; i++) {
-        strncat(cmd, " ", sizeof(cmd) - strlen(cmd) - 1); // Add a space before the argument
-        strncat(cmd, task->args[i], sizeof(cmd) - strlen(cmd) - 1); // Add the argument
+    // Here, we're assuming task->cmd is the command to run and task->args is a NULL-terminated array of arguments
+    char* cmd = task->cmd;
+    char* const* args = task->args;
+    pid_t pid;
+    // Launch the process
+    if (posix_spawn(&pid, cmd, NULL, NULL, args, NULL) != 0) {
+        perror("posix_spawn failed");
     }
-    // Execute the command
-    system(cmd);
+
     // If the task is cyclic, adjust its exec_time and re-insert it into the queue
     if (task->type == CYCLIC) {
         pthread_mutex_lock(&buffer->mutex);
@@ -297,35 +348,25 @@ void execute_task(union sigval sv) {
         add_task(&buffer->p_queue, task);
         pthread_mutex_unlock(&buffer->mutex);
     } else {
+        pthread_mutex_lock(&buffer->mutex);
+        delete_task(&buffer->p_queue, task->id);
+        pthread_mutex_unlock(&buffer->mutex);
         free_task(task);
     }
-    // Signal the task_worker thread that the task is executed
-    pthread_mutex_lock(&timer_mutex);
-    pthread_cond_signal(&timer_cond);
-    pthread_mutex_unlock(&timer_mutex);
+    // Now that we're done executing the task, delete its timer
+    timer_t task_timer = *((timer_t*)task->timer);
+
+    pthread_mutex_lock(&timers_mutex);
+    remove_timer_from_list(task_timer);
+    pthread_mutex_unlock(&timers_mutex);
+
+    timer_delete(task_timer);
 }
-
-
 
 void* task_worker(void* arg) {
     TaskBuffer* buffer = (TaskBuffer*)arg;
 
-
-    // Create a timer
-    timer_t timer;
-    struct sigevent sev = {0};
-    sev.sigev_notify = SIGEV_THREAD;
-    sev.sigev_notify_function = execute_task;
-    sev.sigev_value.sival_ptr = buffer;
-
-    if (timer_create(CLOCK_REALTIME, &sev, &timer) == -1) {
-        perror("timer_create");
-        return NULL;
-    }
-
-   // int i = 0;
     while (true) {
-       // i++;
         pthread_mutex_lock(&buffer->mutex);
         if(buffer->quit_flag){
             pthread_mutex_unlock(&buffer->mutex);
@@ -340,8 +381,7 @@ void* task_worker(void* arg) {
             break;
         }
 
-        printf("pqsize in task worker 2: [%d], %p", buffer->p_queue.size, &buffer->p_queue);
-        fflush(stdout);
+
         // Get the task with the earliest exec_time
         Task* task = peek_next_task(&buffer->p_queue);
         if (!task) {
@@ -351,9 +391,38 @@ void* task_worker(void* arg) {
 
         pthread_mutex_unlock(&buffer->mutex);
 
+        // Create a timer for this task
+        timer_t timer;
+        struct sigevent sev = {0};
+        sev.sigev_notify = SIGEV_THREAD;
+        sev.sigev_notify_function = execute_task;
+        sev.sigev_value.sival_ptr = buffer;
+
+        if (timer_create(CLOCK_REALTIME, &sev, &timer) == -1) {
+            perror("timer_create");
+            return NULL;
+        }
+        printf("pqsize in task worker");
+        fflush(stdout);
+        pthread_mutex_lock(&buffer->mutex);
+        task->timer_created = true;
+        task->timer = timer;
+        pthread_mutex_unlock(&buffer->mutex);
+
+
+
+        // Add created timer to the list
+        // TODO: THIS SHIT BLOCKS THE CODE
+        add_timer_to_list(timer);
+        printf("pqsize in task worker");
+        fflush(stdout);
         // Set the timer to fire at the absolute exec_time
         struct itimerspec its = {0};
+
+        pthread_mutex_lock(&buffer->mutex);
         its.it_value.tv_sec = task->exec_time;
+        pthread_mutex_unlock(&buffer->mutex);
+
 
         if (timer_settime(timer, TIMER_ABSTIME, &its, NULL) == -1) {
             perror("timer_settime");
@@ -362,23 +431,16 @@ void* task_worker(void* arg) {
             free_task(task);
             return NULL;
         }
-
-
-
-        // Wait for the timer to fire using a condition variable
-        pthread_mutex_lock(&timer_mutex);
-        pthread_cond_wait(&timer_cond, &timer_mutex);
-        pthread_mutex_unlock(&timer_mutex);
-        printf("pqsize in task worker 2: [%d], %p", buffer->p_queue.size, &buffer->p_queue);
+        printf("pqsize in task worker");
         fflush(stdout);
     }
 
-    pthread_cond_destroy(&timer_cond);
-    pthread_mutex_destroy(&timer_mutex);
+    //delete all created timers
+    pthread_mutex_lock(&timers_mutex);
+    delete_all_timers();
+    pthread_mutex_unlock(&timers_mutex);
 
-    // Destroy the timer
-    timer_delete(timer);
-
+    pthread_mutex_destroy(&timers_mutex);
     return NULL;
 }
 

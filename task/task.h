@@ -10,6 +10,7 @@
 #include <malloc.h>
 #include <string.h>
 #include <bits/pthreadtypes.h>
+#include <stdbool.h>
 
 #define TASK_STRING_SIZE 200
 #define MAX_ARG_LEN 200
@@ -39,7 +40,9 @@ typedef struct {
     char* args[MAX_ARGS];   // command arguments
     time_t exec_time;       // time of execution
     TaskType type;
-    time_t interval;        // Only used for CYCLIC tasks
+    time_t interval;
+    timer_t timer;
+    bool timer_created;// Only used for CYCLIC tasks
 } Task;
 
 Task* create_task(int id, char* cmd, char* args[], time_t exec_time, TaskType type, time_t interval);

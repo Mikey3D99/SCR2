@@ -1,0 +1,7 @@
+create <timestamp> <task type(0 ABSOLUTE, 1 RELATIVE, 2 CYCLIC)> <interval> <command> <arguments> - task creation
+WARNING! FOR TIMESTAMPS USE DATE CONVERTER
+examples:
+create 16834849349 1 0 touch task_output.txt - absolute
+create 60 0 0 touch task_output.txt - relative
+create 60 0 0 touch $(date +%Y%m%d%H%M%S).txt
+create 1693690683 2 10 touch $(date +%Y%m%d%H%M%S).txt - cyclic
